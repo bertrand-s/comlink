@@ -32,9 +32,18 @@ export interface PostMessageWithOrigin {
   ): void;
 }
 
+export const hasEventListener = Symbol("Comlink.ep.hasEventListener"); // boolean: indicates if the endpoint has an event listener
+export const postMessageResolveMap = Symbol("Comlink.ep.postMessageResolveMap"); // map: contains a list of resolve callbacks for the internal post message
+export const timeoutRemoveEventListener = Symbol(
+  "Comlink.ep.timeoutRemoveEventListener"
+); // timeout: reference to the debounce remove event listener timeout
+
 export interface Endpoint extends EventSource {
-  postMessage(message: any, transfer?: Transferable[]): void;
   start?: () => void;
+  [hasEventListener]?: boolean;
+  [postMessageResolveMap]?: Map<string, any>;
+  [timeoutRemoveEventListener]?: ReturnType<typeof setTimeout>;
+  postMessage(message: any, transfer?: Transferable[]): void;
 }
 
 export const enum WireValueType {
