@@ -33,8 +33,10 @@ export interface PostMessageWithOrigin {
 }
 
 export interface Endpoint extends EventSource {
-  postMessage(message: any, transfer?: Transferable[]): void;
   start?: () => void;
+  eventListener?: any;
+  postMessageResolveMap?: Map<string, any>;
+  postMessage(message: any, transfer?: Transferable[]): void;
 }
 
 export const enum WireValueType {

@@ -358,7 +358,11 @@ function isMessagePort(endpoint: Endpoint): endpoint is MessagePort {
 }
 
 function closeEndPoint(endpoint: Endpoint) {
-  if (isMessagePort(endpoint)) endpoint.close();
+  if (isMessagePort(endpoint)) {
+    endpoint.close();
+  }
+  // remove endpoint event listener if it exists
+  epRemoveEventListener(endpoint);
 }
 
 export function wrap<T>(ep: Endpoint, target?: any): Remote<T> {
@@ -522,6 +526,66 @@ function fromWireValue(value: WireValue): any {
   }
 }
 
+function epRemoveEventListener(ep: Endpoint) {
+  ep.postMessageResolveMap = undefined;
+  if (ep.eventListener) {
+    ep.removeEventListener("message", ep.eventListener);
+    ep.eventListener = undefined;
+  }
+}
+
+function postMessageToEP(
+  ep: Endpoint,
+  id: string,
+  msg: Message,
+  transfers?: Transferable[]
+) {
+  // if the endpoint does not have a listener
+  // add an initial event listener and
+  // set the eventListener to true
+  // this way we only have one event listener added per endpoint
+  if (!ep.eventListener) {
+    // add the post message event listener only once
+    // tslint:disable-next-line:only-arrow-functions
+    const l = function (ev: MessageEvent) {
+      if (!ev.data || !ev.data.id || !ep.postMessageResolveMap) {
+        return;
+      }
+      const evId = ev.data.id;
+
+      // look up the resolve function that is stored
+      // in postMessageResolveMap
+      const resolve = ep.postMessageResolveMap.get(evId);
+
+      if (resolve) {
+        // when resolve is found,
+        // remove the function from postMessageResolveMap
+        // see if there are other pending events on the same endpoint
+        // and then resolve the promise
+        ep.postMessageResolveMap.delete(evId);
+        resolve(ev.data);
+      }
+    };
+
+    ep.addEventListener("message", l as any);
+    // cache the event listener to remove it later
+    // when the endpoint is closed
+    ep.eventListener = l;
+  }
+
+  // call the start method each time
+  // a message is posted from requestResponseMessage
+  // as this matches the original logic for comlink
+  if (ep.start) {
+    ep.start();
+  }
+
+  // now call the actual post message
+  ep.postMessage({ id, ...msg }, transfers);
+
+  return ep;
+}
+
 function requestResponseMessage(
   ep: Endpoint,
   msg: Message,
@@ -529,17 +593,17 @@ function requestResponseMessage(
 ): Promise<WireValue> {
   return new Promise((resolve) => {
     const id = generateUUID();
-    ep.addEventListener("message", function l(ev: MessageEvent) {
-      if (!ev.data || !ev.data.id || ev.data.id !== id) {
-        return;
-      }
-      ep.removeEventListener("message", l as any);
-      resolve(ev.data);
-    } as any);
-    if (ep.start) {
-      ep.start();
+    // create postMessageResolveMap if it does not exist
+    // this will store the promise resolve values
+    if (!ep.postMessageResolveMap) {
+      ep.postMessageResolveMap = new Map();
     }
-    ep.postMessage({ id, ...msg }, transfers);
+    // now store the promise resolve value for
+    // future reference so we can add a single
+    // event listener per endpoint
+    ep.postMessageResolveMap.set(id, resolve);
+
+    postMessageToEP(ep, id, msg, transfers);
   });
 }
 
