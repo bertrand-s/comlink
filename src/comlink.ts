@@ -29,6 +29,14 @@ export const releaseProxy = Symbol("Comlink.releaseProxy");
 const throwMarker = Symbol("Comlink.thrown");
 
 /**
+ * Time in milliseconds to wait before removing event listener
+ * for the internal requestResponseMessage endpoint created by the proxy
+ *
+ * Default debounce 20 seconds
+ */
+let timeDebounceRemoveEventListener = 20 * 1000;
+
+/**
  * Interface of values that were marked to be proxied with `comlink.proxy()`.
  * Can also be implemented by classes.
  */
@@ -522,6 +530,96 @@ function fromWireValue(value: WireValue): any {
   }
 }
 
+/**
+ * Method to expose changing the debounce time used to cleanup
+ * event listeners for the internal endpoint used in requestResponseMessage
+ * and created by proxy
+ */
+export function setTimeDebounceRemoveEventListener(milliseconds: number) {
+  timeDebounceRemoveEventListener = milliseconds;
+}
+
+function clearEPTimeout(ep: Endpoint) {
+  if (ep.timeoutRemoveEventListener) {
+    clearTimeout(ep.timeoutRemoveEventListener);
+    ep.timeoutRemoveEventListener = undefined;
+  }
+}
+
+function checkRemoveEventListener(ep: Endpoint, l: any) {
+  // clear any existing ep timeout that may be running
+  clearEPTimeout(ep);
+  const { postMessageResolveMap } = ep;
+  const size = postMessageResolveMap ? postMessageResolveMap.size : -1;
+
+  // if there are no more promises to be resolved
+  // and the postMessageResolveMap size is zero
+  // update the endpoint to set the eventListener to false
+  // clear out the postMessageResolveMap
+  // and remove the event listener to clean it up
+  if (size === 0) {
+    ep.timeoutRemoveEventListener = setTimeout(() => {
+      ep.timeoutRemoveEventListener = undefined;
+      ep.hasEventListener = false;
+      ep.postMessageResolveMap = undefined;
+      ep.removeEventListener("message", l);
+    }, timeDebounceRemoveEventListener);
+  }
+}
+
+function postMessageToEP(
+  ep: Endpoint,
+  id: string,
+  msg: Message,
+  transfers?: Transferable[]
+) {
+  // if the endpoint does not have a listener
+  // add an initial event listener and
+  // set the eventListener to true
+  // this way we only have one event listener added per endpoint
+  if (!ep.hasEventListener) {
+    ep.hasEventListener = true;
+
+    // add the post message event listener only once
+    ep.addEventListener("message", function l(ev: MessageEvent) {
+      if (!ev.data || !ev.data.id || !ep.postMessageResolveMap) {
+        return;
+      }
+      const evId = ev.data.id;
+
+      // look up the resolve function that is stored
+      // in postMessageResolveMap
+      const resolve = ep.postMessageResolveMap.get(evId);
+
+      if (resolve) {
+        // when resolve is found,
+        // remove the function from postMessageResolveMap
+        // see if there are other pending events on the same endpoint
+        // and then resolve the promise
+        ep.postMessageResolveMap.delete(evId);
+        checkRemoveEventListener(ep, l);
+        resolve(ev.data);
+      }
+    } as any);
+  } else {
+    // if the endpoint has an eventListener
+    // then we should check to clear the endpoint timeout
+    clearEPTimeout(ep);
+  }
+
+  // call the start method each time
+  // a message is posted from requestResponseMessage
+  // as this matches the original logic for comlink
+  if (ep.start) {
+    ep.start();
+  }
+
+  // now call the actual post message
+  ep.postMessage({ id, ...msg }, transfers);
+
+  return ep;
+}
+
 function requestResponseMessage(
   ep: Endpoint,
   msg: Message,
@@ -529,17 +627,17 @@ function requestResponseMessage(
 ): Promise<WireValue> {
   return new Promise((resolve) => {
     const id = generateUUID();
-    ep.addEventListener("message", function l(ev: MessageEvent) {
-      if (!ev.data || !ev.data.id || ev.data.id !== id) {
-        return;
-      }
-      ep.removeEventListener("message", l as any);
-      resolve(ev.data);
-    } as any);
-    if (ep.start) {
-      ep.start();
+    // create postMessageResolveMap if it does not exist
+    // this will store the promise resolve values
+    if (!ep.postMessageResolveMap) {
+      ep.postMessageResolveMap = new Map();
     }
-    ep.postMessage({ id, ...msg }, transfers);
+    // now store the promise resolve value for
+    // future reference so we can add a single
+    // event listener per endpoint
+    ep.postMessageResolveMap.set(id, resolve);
+
+    postMessageToEP(ep, id, msg, transfers);
   });
 }
 
