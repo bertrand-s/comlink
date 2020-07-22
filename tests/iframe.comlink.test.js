@@ -30,4 +30,70 @@ describe("Comlink across iframes", function () {
     const proxy = Comlink.wrap(Comlink.windowEndpoint(this.ifr.contentWindow));
     expect(await proxy(1, 3)).to.equal(4);
   });
+
+  it("can setTimeDebounceRemoveEventListener 100 ms", async function () {
+    Comlink.setTimeDebounceRemoveEventListener(100);
+    const proxy = Comlink.wrap(Comlink.windowEndpoint(this.ifr.contentWindow));
+    const proxyDataPre = JSON.parse(
+      JSON.stringify(await proxy[Comlink.getProxyData]())
+    );
+    expect(proxyDataPre).to.include({ size: 0 });
+    expect(proxyDataPre).to.not.have.any.keys("hasEventListener", "timeout");
+
+    expect(await proxy(1, 3)).to.equal(4);
+
+    const proxyDataBefore = JSON.parse(
+      JSON.stringify(await proxy[Comlink.getProxyData]())
+    );
+
+    expect(proxyDataBefore).to.include({ size: 0, hasEventListener: true });
+    expect(proxyDataBefore).to.have.any.keys("timeout");
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(proxyDataBefore).to.include({ size: 0, hasEventListener: true });
+    expect(proxyDataBefore).to.have.any.keys("timeout");
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const proxyDataAfter = JSON.parse(
+      JSON.stringify(await proxy[Comlink.getProxyData]())
+    );
+
+    expect(proxyDataAfter).to.include({ size: 0 });
+    expect(proxyDataAfter).to.not.have.any.keys("hasEventListener", "timeout");
+  });
+
+  it("can setTimeDebounceRemoveEventListener 1000 ms", async function () {
+    Comlink.setTimeDebounceRemoveEventListener(1000);
+    const proxy = Comlink.wrap(Comlink.windowEndpoint(this.ifr.contentWindow));
+    const proxyDataPre = JSON.parse(
+      JSON.stringify(await proxy[Comlink.getProxyData]())
+    );
+    expect(proxyDataPre).to.include({ size: 0 });
+    expect(proxyDataPre).to.not.have.any.keys("hasEventListener", "timeout");
+
+    expect(await proxy(1, 3)).to.equal(4);
+
+    const proxyDataBefore = JSON.parse(
+      JSON.stringify(await proxy[Comlink.getProxyData]())
+    );
+
+    expect(proxyDataBefore).to.include({ size: 0, hasEventListener: true });
+    expect(proxyDataBefore).to.have.any.keys("timeout");
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    expect(proxyDataBefore).to.include({ size: 0, hasEventListener: true });
+    expect(proxyDataBefore).to.have.any.keys("timeout");
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    const proxyDataAfter = JSON.parse(
+      JSON.stringify(await proxy[Comlink.getProxyData]())
+    );
+
+    expect(proxyDataAfter).to.include({ size: 0 });
+    expect(proxyDataAfter).to.not.have.any.keys("hasEventListener", "timeout");
+  });
 });

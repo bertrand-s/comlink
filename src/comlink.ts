@@ -22,12 +22,14 @@ import {
   PostMessageWithOrigin,
   WireValue,
   WireValueType,
+  RawWireValue,
 } from "./protocol";
 export { Endpoint };
 
 export const proxyMarker = Symbol("Comlink.proxy");
 export const createEndpoint = Symbol("Comlink.endpoint");
 export const releaseProxy = Symbol("Comlink.releaseProxy");
+export const getProxyData = Symbol("Comlink.getProxyData");
 
 const throwMarker = Symbol("Comlink.thrown");
 
@@ -120,11 +122,21 @@ export type RemoteObject<T> = { [P in keyof T]: RemoteProperty<T[P]> };
 export type LocalObject<T> = { [P in keyof T]: LocalProperty<T[P]> };
 
 /**
+ * Interface of values that will be returned by ProxyMethods getProxyData
+ */
+export interface ProxyData {
+  size: number;
+  hasEventListener: boolean;
+  timeout: number;
+}
+
+/**
  * Additional special comlink methods available on each proxy returned by `Comlink.wrap()`.
  */
 export interface ProxyMethods {
   [createEndpoint]: () => Promise<MessagePort>;
   [releaseProxy]: () => void;
+  [getProxyData]: () => Promise<ProxyData>;
 }
 
 /**
@@ -432,6 +444,11 @@ function createProxy<T>(
     apply(_target, _thisArg, rawArgumentList) {
       throwIfProxyReleased(isProxyReleased);
       const last = path[path.length - 1];
+      if ((last as any) === getProxyData) {
+        return requestResponseMessage(ep, {
+          type: MessageType.PROXYDATA,
+        }).then(fromWireValue);
+      }
       if ((last as any) === createEndpoint) {
         return requestResponseMessage(ep, {
           type: MessageType.ENDPOINT,
@@ -628,6 +645,23 @@ function requestResponseMessage(
   msg: Message,
   transfers?: Transferable[]
 ): Promise<WireValue> {
+  if (msg.type === MessageType.PROXYDATA) {
+    return new Promise((resolve) => {
+      const epResolveMapSize =
+        (ep[postMessageResolveMap] && ep[postMessageResolveMap]!.size) || 0;
+      const epHasEventListener = ep[hasEventListener];
+      const epTimeoutRemoveEventListener = ep[timeoutRemoveEventListener];
+      const wireValue: RawWireValue = {
+        type: WireValueType.RAW,
+        value: {
+          size: epResolveMapSize,
+          hasEventListener: epHasEventListener,
+          timeout: epTimeoutRemoveEventListener,
+        },
+      };
+      resolve(wireValue);
+    });
+  }
   return new Promise((resolve) => {
     const id = generateUUID();
     // create postMessageResolveMap if it does not exist

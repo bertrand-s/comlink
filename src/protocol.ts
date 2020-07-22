@@ -77,6 +77,7 @@ export const enum MessageType {
   CONSTRUCT,
   ENDPOINT,
   RELEASE,
+  PROXYDATA,
 }
 
 export interface GetMessage {
@@ -117,10 +118,16 @@ export interface ReleaseMessage {
   path: string[];
 }
 
+export interface ProxyDataMessage {
+  id?: MessageID;
+  type: MessageType.PROXYDATA;
+}
+
 export type Message =
   | GetMessage
   | SetMessage
   | ApplyMessage
   | ConstructMessage
   | EndpointMessage
-  | ReleaseMessage;
+  | ReleaseMessage
+  | ProxyDataMessage;

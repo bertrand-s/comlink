@@ -580,6 +580,88 @@ describe("Comlink in the same realm", function () {
     Comlink.expose({ value: 4 }, this.port2);
     expect(await thing.value).to.equal(4);
   });
+
+  it("getProxyData should return properly formatted proxy data", async function () {
+    const thing = Comlink.wrap(this.port1, { value: {} });
+    Comlink.expose({ value: 7 }, this.port2);
+    expect(await thing.value).to.equal(7);
+    const proxyData = await thing[Comlink.getProxyData]();
+
+    expect(proxyData).to.include({ size: 0, hasEventListener: true });
+    expect(proxyData).to.have.any.keys("timeout");
+
+    expect(typeof proxyData.size).to.equal("number");
+    expect(typeof proxyData.hasEventListener).to.equal("boolean");
+    expect(typeof proxyData.timeout).to.equal("number");
+  });
+
+  it("can setTimeDebounceRemoveEventListener 100 ms", async function () {
+    Comlink.setTimeDebounceRemoveEventListener(100);
+    const thing = Comlink.wrap(this.port1);
+    Comlink.expose({ value: 4 }, this.port2);
+    const proxyDataPre = JSON.parse(
+      JSON.stringify(await thing[Comlink.getProxyData]())
+    );
+    expect(proxyDataPre).to.include({ size: 0 });
+    expect(proxyDataPre).to.not.have.any.keys("hasEventListener", "timeout");
+
+    expect(await thing.value).to.equal(4);
+
+    const proxyDataBefore = JSON.parse(
+      JSON.stringify(await thing[Comlink.getProxyData]())
+    );
+
+    expect(proxyDataBefore).to.include({ size: 0, hasEventListener: true });
+    expect(proxyDataBefore).to.have.any.keys("timeout");
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(proxyDataBefore).to.include({ size: 0, hasEventListener: true });
+    expect(proxyDataBefore).to.have.any.keys("timeout");
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const proxyDataAfter = JSON.parse(
+      JSON.stringify(await thing[Comlink.getProxyData]())
+    );
+
+    expect(proxyDataAfter).to.include({ size: 0 });
+    expect(proxyDataAfter).to.not.have.any.keys("hasEventListener", "timeout");
+  });
+
+  it("can setTimeDebounceRemoveEventListener 1000 ms", async function () {
+    Comlink.setTimeDebounceRemoveEventListener(1000);
+    const thing = Comlink.wrap(this.port1);
+    Comlink.expose({ value: 4 }, this.port2);
+    const proxyDataPre = JSON.parse(
+      JSON.stringify(await thing[Comlink.getProxyData]())
+    );
+    expect(proxyDataPre).to.include({ size: 0 });
+    expect(proxyDataPre).to.not.have.any.keys("hasEventListener", "timeout");
+
+    expect(await thing.value).to.equal(4);
+
+    const proxyDataBefore = JSON.parse(
+      JSON.stringify(await thing[Comlink.getProxyData]())
+    );
+
+    expect(proxyDataBefore).to.include({ size: 0, hasEventListener: true });
+    expect(proxyDataBefore).to.have.any.keys("timeout");
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    expect(proxyDataBefore).to.include({ size: 0, hasEventListener: true });
+    expect(proxyDataBefore).to.have.any.keys("timeout");
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    const proxyDataAfter = JSON.parse(
+      JSON.stringify(await thing[Comlink.getProxyData]())
+    );
+
+    expect(proxyDataAfter).to.include({ size: 0 });
+    expect(proxyDataAfter).to.not.have.any.keys("hasEventListener", "timeout");
+  });
 });
 
 function guardedIt(f) {
