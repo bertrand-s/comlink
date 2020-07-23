@@ -222,7 +222,7 @@ export interface TransferHandler<T, S> {
    * value that can be sent in a message, consisting of structured-cloneable
    * values and/or transferrable objects.
    */
-  serialize(value: T): [S, Transferable[]];
+  serialize(value: T, ep: Endpoint): [S, Transferable[]];
 
   /**
    * Gets called to deserialize an incoming value that was serialized in the
@@ -362,7 +362,7 @@ export function expose(obj: any, ep: Endpoint = self as any) {
         return { value, [throwMarker]: 0 };
       })
       .then((returnValue) => {
-        const [wireValue, transferables] = toWireValue(returnValue);
+        const [wireValue, transferables] = toWireValue(returnValue, ep);
         ep.postMessage({ ...wireValue, id }, transferables);
         if (type === MessageType.RELEASE) {
           // detach and deactive after sending release response above.
@@ -430,7 +430,7 @@ function createProxy<T>(
       throwIfProxyReleased(isProxyReleased);
       // FIXME: ES6 Proxy Handler `set` methods are supposed to return a
       // boolean. To show good will, we return true asynchronously ¯\_(ツ)_/¯
-      const [value, transferables] = toWireValue(rawValue);
+      const [value, transferables] = toWireValue(rawValue, ep);
       return requestResponseMessage(
         ep,
         {
@@ -458,7 +458,10 @@ function createProxy<T>(
       if (last === "bind") {
         return createProxy(ep, path.slice(0, -1));
       }
-      const [argumentList, transferables] = processArguments(rawArgumentList);
+      const [argumentList, transferables] = processArguments(
+        rawArgumentList,
+        ep
+      );
       return requestResponseMessage(
         ep,
         {
@@ -471,7 +474,10 @@ function createProxy<T>(
     },
     construct(_target, rawArgumentList) {
       throwIfProxyReleased(isProxyReleased);
-      const [argumentList, transferables] = processArguments(rawArgumentList);
+      const [argumentList, transferables] = processArguments(
+        rawArgumentList,
+        ep
+      );
       return requestResponseMessage(
         ep,
         {
@@ -490,8 +496,11 @@ function myFlat<T>(arr: (T | T[])[]): T[] {
   return Array.prototype.concat.apply([], arr);
 }
 
-function processArguments(argumentList: any[]): [WireValue[], Transferable[]] {
-  const processed = argumentList.map(toWireValue);
+function processArguments(
+  argumentList: any[],
+  ep: Endpoint
+): [WireValue[], Transferable[]] {
+  const processed = argumentList.map((v) => toWireValue(v, ep));
   return [processed.map((v) => v[0]), myFlat(processed.map((v) => v[1]))];
 }
 
@@ -518,10 +527,10 @@ export function windowEndpoint(
   };
 }
 
-function toWireValue(value: any): [WireValue, Transferable[]] {
+function toWireValue(value: any, ep: Endpoint): [WireValue, Transferable[]] {
   for (const [name, handler] of transferHandlers) {
     if (handler.canHandle(value)) {
-      const [serializedValue, transferables] = handler.serialize(value);
+      const [serializedValue, transferables] = handler.serialize(value, ep);
       return [
         {
           type: WireValueType.HANDLER,
